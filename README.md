@@ -755,8 +755,8 @@ See [`config/default.yaml`](config/default.yaml) for the full reference. Top-lev
 
 ### Helm values
 
-See [`charts/openg2p-audit-manager/values.yaml`](charts/openg2p-audit-manager/values.yaml) and
-[`charts/openg2p-audit-manager/questions.yaml`](charts/openg2p-audit-manager/questions.yaml) for
+See [`helm/openg2p-audit-manager/values.yaml`](helm/openg2p-audit-manager/values.yaml) and
+[`helm/openg2p-audit-manager/questions.yaml`](helm/openg2p-audit-manager/questions.yaml) for
 the full schema of user-facing values and their Rancher UI groupings.
 
 ---

@@ -53,6 +53,7 @@ jobs:
       - name: Generate OpenAPI spec
         run: |
           pip install -e .
+          mkdir -p docs
           python scripts/generate_openapi.py > docs/openapi.json
 
       - name: Commit OpenAPI spec if changed

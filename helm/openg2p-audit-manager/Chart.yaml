@@ -2,7 +2,7 @@ apiVersion: v2
 name: openg2p-audit-manager
 description: A Helm chart for OpenG2P Audit Manager Service
 type: application
-version: 1.0.0
+version: 0.0.0-develop
 dependencies:
 - name: common
   repository: https://openg2p.github.io/openg2p-helm
