@@ -110,7 +110,7 @@ auditManager:
       producer:
         acks: "1"
         lingerMs: 50
-        compressionType: zstd
+        compressionType: gzip    # stdlib-only; switch to zstd (+ zstandard dep) for higher volume
         maxBatchSize: 524288
       consumer:
         batchMaxRecords: 500
@@ -200,8 +200,11 @@ auditManager:
   topicInit:
     enabled: true
     image:
-      repository: bitnami/kafka
-      tag: "3.7"
+      # apache/kafka — the official ASF image, KRaft-native, kafka-topics.sh on PATH.
+      # Note: bitnami/kafka is no longer freely pullable from Docker Hub as of
+      # Aug 2025. Use bitnamilegacy/kafka:3.7 if you need that lineage.
+      repository: apache/kafka
+      tag: "3.7.2"
       pullPolicy: IfNotPresent
     # Number of partitions for the audit events topic. The maximum consumer
     # parallelism is bounded by this number — keep HPA maxReplicas ≤ partitions.
@@ -211,7 +214,8 @@ auditManager:
     # How long Kafka retains messages on the topic. Long enough for the
     # consumer to recover from outages and replay. Default: 7 days.
     retentionMs: "604800000"
-    compressionType: zstd
+    # Topic-level default. Producer may override per-batch.
+    compressionType: gzip
     backoffLimit: 3
     containerSecurityContext:
       enabled: false

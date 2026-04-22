@@ -207,8 +207,10 @@ def test_to_record_shape_for_beneficiary_updated() -> None:
     assert rec["outcome"] == "success"
     # traceparent -> trace_id extracted from W3C header
     assert rec["trace_id"] == "4bf92f3577b34da6a3ce929d0e0e4736"
-    # envelope preserves full fidelity including changes[]
-    assert rec["envelope"]["data"]["changes"][0]["field"] == "phone"
+    # envelope is a JSON *string* (asyncpg/JSONB contract). Parse and check fidelity.
+    envelope = json.loads(rec["envelope"])
+    assert envelope["data"]["changes"][0]["field"] == "phone"
+    assert envelope["id"] == "smoke-04-beneficiary-updated"
 
 
 def test_to_record_no_resource_for_login() -> None:

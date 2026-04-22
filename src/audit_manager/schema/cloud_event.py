@@ -9,6 +9,7 @@ standardized across all OpenG2P events: actor, action, outcome.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 from uuid import uuid4
@@ -99,7 +100,10 @@ class CloudEvent(BaseModel):
             "action": d.action,
             "outcome": d.outcome,
             "trace_id": _trace_id_from_parent(self.traceparent),
-            "envelope": self.model_dump(mode="json"),
+            # asyncpg needs a JSON *string* (or bytes) for JSONB casts,
+            # not a Python dict. Pre-serialize here so the consumer's
+            # INSERT ... CAST(:envelope AS JSONB) has valid input.
+            "envelope": json.dumps(self.model_dump(mode="json")),
         }
 
 

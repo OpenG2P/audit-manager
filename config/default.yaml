@@ -21,7 +21,7 @@ audit_manager:
     producer:
       acks: "1"
       linger_ms: 50
-      compression_type: zstd
+      compression_type: gzip   # stdlib-only; switch to zstd (+ zstandard dep) if volume grows
       max_batch_size: 524288   # 512 KB
     consumer:
       # Trigger a Postgres flush after this many records or flush_interval_ms.

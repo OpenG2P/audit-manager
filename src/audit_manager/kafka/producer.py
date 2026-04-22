@@ -23,6 +23,16 @@ from ..schema.cloud_event import CloudEvent
 logger = logging.getLogger(__name__)
 
 
+def _normalize_acks(acks: str | int) -> int | str:
+    """aiokafka accepts 0 | 1 | -1 | "all" (ints must be real ints, not strings)."""
+    if isinstance(acks, int):
+        return acks
+    s = str(acks).strip().lower()
+    if s == "all":
+        return "all"
+    return int(s)   # "0" | "1" | "-1"
+
+
 class AuditProducer:
     """Wraps an AIOKafkaProducer plus the in-process ingest queue."""
 
@@ -38,7 +48,7 @@ class AuditProducer:
         self._producer = AIOKafkaProducer(
             bootstrap_servers=self._cfg.bootstrap_servers,
             client_id=self._cfg.client_id,
-            acks=self._cfg.producer.acks,
+            acks=_normalize_acks(self._cfg.producer.acks),
             linger_ms=self._cfg.producer.linger_ms,
             compression_type=self._cfg.producer.compression_type,
             max_batch_size=self._cfg.producer.max_batch_size,

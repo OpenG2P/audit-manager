@@ -23,7 +23,7 @@ class IngestConfig(BaseModel):
 class KafkaProducerConfig(BaseModel):
     acks: str = "1"
     linger_ms: int = 50
-    compression_type: str = "zstd"
+    compression_type: str = "gzip"
     max_batch_size: int = 524288
 
 
