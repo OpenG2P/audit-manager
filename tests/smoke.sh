@@ -154,7 +154,7 @@ step "Spot-check one row: smoke-04-beneficiary-updated"
 
 row_json=$(docker compose exec -T "${COMPOSE_PG_SERVICE}" \
     psql -U "${COMPOSE_PG_USER}" -d "${COMPOSE_PG_DB}" \
-    -At -c "SELECT row_to_json(t) FROM (SELECT id, type, actor_id, resource_type, resource_id, outcome, envelope->'data'->'changes' AS changes FROM audit_events WHERE id = 'smoke-04-beneficiary-updated') t;")
+    -At -c "SELECT row_to_json(t) FROM (SELECT id, type, actor_id, resource_type, resource_id, outcome, details->'changes' AS changes FROM audit_events WHERE id = 'smoke-04-beneficiary-updated') t;")
 
 if [ -n "$row_json" ]; then
   echo "  $(echo "$row_json" | jq -C .)"
@@ -164,7 +164,7 @@ if [ -n "$row_json" ]; then
      && [ "$(echo "$row_json" | jq -r .resource_type)" = "beneficiary" ] \
      && [ "$(echo "$row_json" | jq -r .outcome)" = "success" ] \
      && [ "$(echo "$row_json" | jq -r '.changes | length')" = "2" ]; then
-    pass "row fields + changes[] preserved in envelope JSONB"
+    pass "flat columns + details.changes preserved"
   else
     fail "row fields did not match expected values"
   fi

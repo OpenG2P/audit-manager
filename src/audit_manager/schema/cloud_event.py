@@ -85,8 +85,16 @@ class CloudEvent(BaseModel):
         return v
 
     def to_record(self) -> dict[str, Any]:
-        """Flatten to a dict matching the audit_events table columns."""
+        """Flatten to a dict matching the audit_events table columns.
+
+        Promoted columns (flat, indexed) come from the CloudEvents envelope
+        and the standardized `data` sub-fields (actor/action/outcome/reason).
+        Anything else inside `data` — resource extras like amount/currency,
+        changes[] diffs, context{} — goes into the `details` JSONB column.
+        Events with no extras (e.g. plain logins) get details = NULL.
+        """
         d = self.data
+        details = _compute_details(d)
         return {
             "id": self.id,
             "occurred_at": self.time,
@@ -99,11 +107,10 @@ class CloudEvent(BaseModel):
             "resource_id": d.resource.id if d.resource else None,
             "action": d.action,
             "outcome": d.outcome,
+            "reason": d.reason,
             "trace_id": _trace_id_from_parent(self.traceparent),
-            # asyncpg needs a JSON *string* (or bytes) for JSONB casts,
-            # not a Python dict. Pre-serialize here so the consumer's
-            # INSERT ... CAST(:envelope AS JSONB) has valid input.
-            "envelope": json.dumps(self.model_dump(mode="json")),
+            # asyncpg wants a JSON string (or None) for JSONB casts — not a dict.
+            "details": json.dumps(details) if details is not None else None,
         }
 
 
@@ -115,6 +122,23 @@ def _trace_id_from_parent(traceparent: Optional[str]) -> Optional[str]:
     if len(parts) >= 3:
         return parts[1]
     return None
+
+
+# Sub-fields of `data` that are already promoted to flat columns. Anything
+# else becomes part of `details`.
+_PROMOTED_DATA_FIELDS = {"actor", "action", "outcome", "reason"}
+
+
+def _compute_details(d: "AuditData") -> Optional[dict[str, Any]]:
+    """Return event-type-specific extras from `data`, or None if there aren't any.
+
+    For `resource`: resource_type and resource_id are flat, but the whole
+    resource object (including extras like amount, currency, program_id) is
+    kept under `details.resource` so those extras remain queryable.
+    """
+    raw = d.model_dump(mode="json", exclude_none=True)
+    extras = {k: v for k, v in raw.items() if k not in _PROMOTED_DATA_FIELDS}
+    return extras if extras else None
 
 
 class EventBatch(BaseModel):

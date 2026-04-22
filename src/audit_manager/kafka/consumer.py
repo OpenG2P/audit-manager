@@ -34,11 +34,11 @@ _INSERT_SQL = text(
     INSERT INTO audit_events (
         id, occurred_at, source, type, subject,
         actor_type, actor_id, resource_type, resource_id,
-        action, outcome, trace_id, envelope
+        action, outcome, reason, trace_id, details
     ) VALUES (
         :id, :occurred_at, :source, :type, :subject,
         :actor_type, :actor_id, :resource_type, :resource_id,
-        :action, :outcome, :trace_id, CAST(:envelope AS JSONB)
+        :action, :outcome, :reason, :trace_id, CAST(:details AS JSONB)
     )
     ON CONFLICT (id, occurred_at) DO NOTHING
     """

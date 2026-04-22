@@ -22,6 +22,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 logger = logging.getLogger(__name__)
 
 # Parent table DDL — partitioned by RANGE on occurred_at.
+#
+# Design: flat, queryable columns for the 95% of audit queries, plus a
+# nullable JSONB `details` column for event-type-specific extras (e.g.
+# beneficiary update diffs, payment approval context). The full raw
+# CloudEvents envelope is intentionally *not* stored — promoted columns
+# cover the standard fields; `details` carries only the unpromoted bits.
 _PARENT_TABLE_DDL = """
 CREATE TABLE IF NOT EXISTS audit_events (
     id              TEXT         NOT NULL,
@@ -36,8 +42,9 @@ CREATE TABLE IF NOT EXISTS audit_events (
     resource_id     TEXT,
     action          TEXT         NOT NULL,
     outcome         TEXT         NOT NULL,
+    reason          TEXT,
     trace_id        TEXT,
-    envelope        JSONB        NOT NULL,
+    details         JSONB,
     PRIMARY KEY (id, occurred_at)
 ) PARTITION BY RANGE (occurred_at)
 """

@@ -336,9 +336,9 @@ lives in `data` as event-type-specific attributes.
   field that is indexed or logged.
 - PII belongs inside `data.resource` / `data.changes`, where it can be
   redacted or encrypted per field before emit.
-- The full CloudEvents envelope is stored verbatim in a `JSONB` column
-  (`envelope`) so forensic investigators retain full fidelity, but
-  access to that column should be restricted in production.
+- Event-type-specific extras (diffs, amounts, context) are stored in the
+  `details` JSONB column. Access to `details` should be restricted in
+  production since it may carry PII from `changes[]`.
 
 ---
 
@@ -497,11 +497,30 @@ CREATE TABLE audit_events (
     resource_id    TEXT,
     action         TEXT        NOT NULL,
     outcome        TEXT        NOT NULL,
+    reason         TEXT,
     trace_id       TEXT,
-    envelope       JSONB       NOT NULL,
+    details        JSONB,
     PRIMARY KEY (id, occurred_at)
 ) PARTITION BY RANGE (occurred_at);
 ```
+
+**Design choice — flat columns + nullable `details` JSONB.**
+
+The standard CloudEvents fields (id, source, type, time, subject, trace) and
+the three core `data` fields (actor, action, outcome) plus `reason` are
+**promoted to flat columns**. This keeps the common audit queries as plain
+SQL — no JSON operators needed for 95% of investigation work.
+
+`details` is a nullable JSONB column that carries only the event-type-specific
+extras — the full `resource` object (with any attributes beyond type/id like
+`amount`, `currency`, `beneficiary_id`, `program_id`), the `changes[]` diff
+on updates, and `context{}` for bank codes, MFA methods, approval levels,
+correlation ids. Plain logins that have no extras get `details = NULL`.
+
+We deliberately don't store a full copy of the CloudEvents envelope. The
+promoted columns already capture every envelope field; `details` holds what
+they don't. Kafka still carries the full CloudEvent, so forensic replay is
+possible from the topic if ever needed.
 
 **Indexes** (propagated automatically to child partitions):
 
@@ -805,20 +824,45 @@ Indexed query patterns:
 
 ```sql
 -- Everything a specific actor did in a window
-SELECT * FROM audit_events
+SELECT occurred_at, type, action, outcome, resource_type, resource_id
+FROM audit_events
 WHERE actor_id = 'u_4421'
   AND occurred_at >= '2026-04-01' AND occurred_at < '2026-05-01'
 ORDER BY occurred_at;
 
 -- Everything that happened to a specific resource
-SELECT * FROM audit_events
+SELECT occurred_at, actor_id, action, outcome, reason
+FROM audit_events
 WHERE resource_type = 'beneficiary' AND resource_id = 'b_1029384756'
 ORDER BY occurred_at;
 
+-- All denied or failed events in the last 24h (uses flat `outcome` + `reason`)
+SELECT occurred_at, actor_id, type, outcome, reason
+FROM audit_events
+WHERE outcome IN ('denied', 'failure')
+  AND occurred_at > now() - interval '24 hours'
+ORDER BY occurred_at DESC;
+
 -- Correlate across services via trace id
-SELECT * FROM audit_events
+SELECT occurred_at, source, type, action, outcome
+FROM audit_events
 WHERE trace_id = '4bf92f3577b34da6a3ce929d0e0e4736'
 ORDER BY occurred_at;
+
+-- Drill into structured extras — show field diffs for a beneficiary update
+SELECT id, occurred_at, actor_id, details->'changes' AS changes
+FROM audit_events
+WHERE type = 'org.openg2p.beneficiary.updated'
+  AND resource_id = 'b_1029384756'
+ORDER BY occurred_at DESC;
+
+-- All payments above 10k INR (uses details.resource.amount)
+SELECT id, occurred_at, actor_id, details->'resource' AS resource
+FROM audit_events
+WHERE type = 'org.openg2p.payment.approved'
+  AND (details->'resource'->>'currency') = 'INR'
+  AND (details->'resource'->>'amount')::numeric > 10000
+ORDER BY occurred_at DESC;
 ```
 
 ### "Need to grow the Kafka partition count"
@@ -850,9 +894,9 @@ Set `auditManager.appConfig.database.partitionRetentionMonths` and
 - **Authorization:** there is no per-caller authorization at the audit
   service. Any caller with network access can emit events. If that is a
   concern, require a signed JWT at the Istio layer.
-- **PII:** see [PII handling](#pii-handling). The `envelope` JSONB column
-  contains the verbatim event; access to that column should be restricted
-  to compliance / investigators.
+- **PII:** see [PII handling](#pii-handling). The `details` JSONB column
+  may carry structured PII (e.g. field diffs in `changes[]`); access to
+  `details` should be restricted to compliance / investigators.
 - **DB role:** the service's DB user needs only `CONNECT`, `USAGE`,
   `INSERT`, `SELECT` on its schema. A separate read-only role is
   recommended for investigators (no `INSERT` / `UPDATE` / `DELETE` — audits

@@ -71,9 +71,10 @@ What it does, in order:
 5. Sleeps 4 s for Kafka → Postgres flush.
 6. Queries Postgres (via `docker compose exec`) and asserts every expected
    id is present.
-7. Spot-checks one row: verifies `type`, `actor_id`, `resource_type`,
-   `outcome`, and that `envelope->'data'->'changes'` still has 2 elements
-   (full CloudEvents fidelity preserved).
+7. Spot-checks one row: verifies flat columns (`type`, `actor_id`,
+   `resource_type`, `outcome`) and that `details->'changes'` still has
+   2 elements — i.e. event-type-specific structured extras landed in
+   `details` JSONB as expected.
 8. Re-POSTs a duplicate and confirms Postgres still has exactly one row for
    that id (idempotency).
 

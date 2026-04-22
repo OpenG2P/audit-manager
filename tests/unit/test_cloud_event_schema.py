@@ -195,6 +195,7 @@ def test_to_record_shape_for_beneficiary_updated() -> None:
     ev = CloudEvent.model_validate(payload)
     rec = ev.to_record()
 
+    # Flat promoted columns
     assert rec["id"] == "smoke-04-beneficiary-updated"
     assert rec["source"] == "/openg2p/beneficiary-service"
     assert rec["type"] == "org.openg2p.beneficiary.updated"
@@ -205,12 +206,22 @@ def test_to_record_shape_for_beneficiary_updated() -> None:
     assert rec["resource_id"] == "b_1029384756"
     assert rec["action"] == "update"
     assert rec["outcome"] == "success"
+    assert rec["reason"] is None   # no reason on a successful update
     # traceparent -> trace_id extracted from W3C header
     assert rec["trace_id"] == "4bf92f3577b34da6a3ce929d0e0e4736"
-    # envelope is a JSON *string* (asyncpg/JSONB contract). Parse and check fidelity.
-    envelope = json.loads(rec["envelope"])
-    assert envelope["data"]["changes"][0]["field"] == "phone"
-    assert envelope["id"] == "smoke-04-beneficiary-updated"
+
+    # details is a JSON string (asyncpg/JSONB contract). Parse and verify:
+    #  - actor/action/outcome/reason are NOT in details (they're flat)
+    #  - resource (with extras if any) IS in details
+    #  - changes[] from the CloudEvent `data` IS in details
+    details = json.loads(rec["details"])
+    assert "actor" not in details
+    assert "action" not in details
+    assert "outcome" not in details
+    assert details["resource"]["type"] == "beneficiary"
+    assert details["resource"]["id"] == "b_1029384756"
+    assert details["changes"][0]["field"] == "phone"
+    assert len(details["changes"]) == 2
 
 
 def test_to_record_no_resource_for_login() -> None:
@@ -221,6 +232,10 @@ def test_to_record_no_resource_for_login() -> None:
     assert rec["resource_type"] is None
     assert rec["resource_id"] is None
     assert rec["action"] == "login"
+    # Login carries `context` in data → details has context but no resource
+    details = json.loads(rec["details"])
+    assert "resource" not in details
+    assert details["context"]["mfa"] == "totp"
 
 
 def test_to_record_system_actor() -> None:
@@ -233,6 +248,32 @@ def test_to_record_system_actor() -> None:
     assert rec["actor_type"] == "system"
     assert rec["actor_id"] == "reconciliation-job"
     assert rec["outcome"] == "success"
+    # reason is promoted to a flat column
+    assert rec["reason"] == "bank_rejection"
+    # bank_code lives in details.context
+    details = json.loads(rec["details"])
+    assert details["context"]["bank_code"] == "E102"
+
+
+def test_to_record_reason_promoted_for_failure() -> None:
+    payload = json.loads((SAMPLES_DIR / "02-login-failed.json").read_text())
+    ev = CloudEvent.model_validate(payload)
+    rec = ev.to_record()
+
+    assert rec["outcome"] == "failure"
+    assert rec["reason"] == "invalid_password"
+    # reason should NOT also be in details (it's been promoted)
+    details = json.loads(rec["details"])
+    assert "reason" not in details
+
+
+def test_to_record_details_is_none_when_no_extras() -> None:
+    # A minimal event with only the 3 core data fields has nothing to
+    # put into details — it should come out as None (→ SQL NULL).
+    payload = _base_event()
+    ev = CloudEvent.model_validate(payload)
+    rec = ev.to_record()
+    assert rec["details"] is None
 
 
 def test_to_record_trace_id_none_without_traceparent() -> None:
