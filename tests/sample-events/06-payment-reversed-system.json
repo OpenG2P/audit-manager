@@ -1,0 +1,25 @@
+{
+  "specversion": "1.0",
+  "id": "smoke-06-payment-reversed",
+  "source": "/openg2p/payment-recon",
+  "type": "org.openg2p.payment.reversed",
+  "subject": "payment/pay_55231",
+  "time": "2026-04-22T16:00:00Z",
+  "data": {
+    "actor": {
+      "type": "system",
+      "id": "reconciliation-job"
+    },
+    "action": "reverse",
+    "outcome": "success",
+    "resource": {
+      "type": "payment",
+      "id": "pay_55231"
+    },
+    "reason": "bank_rejection",
+    "context": {
+      "job_run_id": "r_20260422_0200",
+      "bank_code": "E102"
+    }
+  }
+}

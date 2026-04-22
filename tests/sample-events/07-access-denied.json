@@ -1,0 +1,22 @@
+{
+  "specversion": "1.0",
+  "id": "smoke-07-access-denied",
+  "source": "/openg2p/beneficiary-service",
+  "type": "org.openg2p.beneficiary.viewed",
+  "subject": "beneficiary/b_9999999999",
+  "time": "2026-04-22T14:20:00Z",
+  "data": {
+    "actor": {
+      "type": "user",
+      "id": "u_7777",
+      "roles": ["viewer.basic"]
+    },
+    "action": "read",
+    "outcome": "denied",
+    "reason": "insufficient_role",
+    "resource": {
+      "type": "beneficiary",
+      "id": "b_9999999999"
+    }
+  }
+}

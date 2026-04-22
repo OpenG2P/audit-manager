@@ -1,0 +1,88 @@
+{{- if and .Values.auditManager.enabled .Values.auditManager.topicInit.enabled }}
+{{- $values := .Values.auditManager -}}
+{{- $context := dict "Values" (merge (deepCopy $values) (dict "global" .Values.global)) "Chart" .Chart "Release" .Release "Files" .Files "Capabilities" .Capabilities -}}
+{{- with $context -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "common.names.fullname" . }}-topic-init
+  labels: {{- include "common.labels.standard" (dict "customLabels" .Values.commonLabels "context" $) | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.topicInit.backoffLimit }}
+  template:
+    metadata:
+      labels: {{- include "common.labels.standard" (dict "customLabels" .Values.podLabels "context" $) | nindent 8 }}
+        app.kubernetes.io/component: audit-manager-topic-init
+    spec:
+      restartPolicy: Never
+      {{- include "auditManager.imagePullSecrets" . | nindent 6 }}
+      {{- if and .Values.topicInit.containerSecurityContext .Values.topicInit.containerSecurityContext.enabled }}
+      securityContext: {{- include "common.tplvalues.render" (dict "value" (omit .Values.topicInit.containerSecurityContext "enabled") "context" $) | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: topic-init
+          image: {{ include "common.images.image" (dict "imageRoot" .Values.topicInit.image "global" .Values.global) }}
+          imagePullPolicy: {{ .Values.topicInit.image.pullPolicy }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              echo "Waiting for Kafka at ${KAFKA_BOOTSTRAP}..."
+              for i in $(seq 1 60); do
+                if kafka-topics.sh --bootstrap-server "${KAFKA_BOOTSTRAP}" --list >/dev/null 2>&1; then
+                  echo "Kafka reachable."
+                  break
+                fi
+                echo "  attempt ${i}/60 — retrying in 5s"
+                sleep 5
+              done
+
+              ensure_topic() {
+                local topic="$1"
+                echo "Ensuring topic ${topic} (partitions=${PARTITIONS}, rf=${REPLICATION}, retention=${RETENTION_MS}ms)"
+                kafka-topics.sh --bootstrap-server "${KAFKA_BOOTSTRAP}" \
+                  --create --if-not-exists \
+                  --topic "${topic}" \
+                  --partitions "${PARTITIONS}" \
+                  --replication-factor "${REPLICATION}" \
+                  --config retention.ms="${RETENTION_MS}" \
+                  --config compression.type="${COMPRESSION_TYPE}"
+
+                # If the topic already existed with fewer partitions, grow it.
+                # Partition count can only be increased, never decreased.
+                current=$(kafka-topics.sh --bootstrap-server "${KAFKA_BOOTSTRAP}" \
+                  --describe --topic "${topic}" \
+                  | awk -F'PartitionCount: ' '/PartitionCount:/ {print $2}' \
+                  | awk '{print $1}')
+                if [ -n "${current}" ] && [ "${current}" -lt "${PARTITIONS}" ]; then
+                  echo "Growing ${topic} partitions from ${current} to ${PARTITIONS}"
+                  kafka-topics.sh --bootstrap-server "${KAFKA_BOOTSTRAP}" \
+                    --alter --topic "${topic}" --partitions "${PARTITIONS}"
+                fi
+              }
+
+              ensure_topic "${TOPIC}"
+              ensure_topic "${DLQ_TOPIC}"
+
+              echo "Topic init complete."
+          env:
+            - name: KAFKA_BOOTSTRAP
+              value: {{ .Values.global.kafkaBootstrapServers | quote }}
+            - name: TOPIC
+              value: {{ .Values.appConfig.kafka.topic | quote }}
+            - name: DLQ_TOPIC
+              value: {{ .Values.appConfig.kafka.dlqTopic | quote }}
+            - name: PARTITIONS
+              value: {{ .Values.topicInit.partitions | quote }}
+            - name: REPLICATION
+              value: {{ .Values.topicInit.replicationFactor | quote }}
+            - name: RETENTION_MS
+              value: {{ .Values.topicInit.retentionMs | quote }}
+            - name: COMPRESSION_TYPE
+              value: {{ .Values.topicInit.compressionType | quote }}
+{{- end -}}
+{{- end }}

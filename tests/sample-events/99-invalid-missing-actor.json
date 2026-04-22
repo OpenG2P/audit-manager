@@ -1,0 +1,12 @@
+{
+  "specversion": "1.0",
+  "id": "smoke-99-invalid-missing-actor",
+  "source": "/openg2p/beneficiary-service",
+  "type": "org.openg2p.beneficiary.updated",
+  "time": "2026-04-22T14:30:00Z",
+  "data": {
+    "action": "update",
+    "outcome": "success",
+    "resource": { "type": "beneficiary", "id": "b_1029384756" }
+  }
+}

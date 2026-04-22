@@ -1,0 +1,42 @@
+{{- if .Values.auditManager.enabled }}
+{{- $values := .Values.auditManager -}}
+{{- $context := dict "Values" (merge (deepCopy $values) (dict "global" .Values.global)) "Chart" .Chart "Release" .Release "Files" .Files "Capabilities" .Capabilities -}}
+{{- with $context -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "common.names.fullname" . }}-config
+  labels: {{- include "common.labels.standard" (dict "customLabels" .Values.commonLabels "context" $) | nindent 4 }}
+data:
+  config.yaml: |
+    audit_manager:
+      service_id: {{ .Values.appConfig.serviceId | quote }}
+      api_version: {{ .Values.appConfig.apiVersion | quote }}
+
+      ingest:
+        queue_max_size: {{ .Values.appConfig.ingest.queueMaxSize }}
+        max_batch_size: {{ .Values.appConfig.ingest.maxBatchSize }}
+
+      kafka:
+        bootstrap_servers: {{ .Values.global.kafkaBootstrapServers | quote }}
+        topic: {{ .Values.appConfig.kafka.topic | quote }}
+        dlq_topic: {{ .Values.appConfig.kafka.dlqTopic | quote }}
+        client_id: {{ .Values.appConfig.kafka.clientId | quote }}
+        consumer_group: {{ .Values.appConfig.kafka.consumerGroup | quote }}
+        producer:
+          acks: {{ .Values.appConfig.kafka.producer.acks | quote }}
+          linger_ms: {{ .Values.appConfig.kafka.producer.lingerMs }}
+          compression_type: {{ .Values.appConfig.kafka.producer.compressionType | quote }}
+          max_batch_size: {{ .Values.appConfig.kafka.producer.maxBatchSize }}
+        consumer:
+          batch_max_records: {{ .Values.appConfig.kafka.consumer.batchMaxRecords }}
+          flush_interval_ms: {{ .Values.appConfig.kafka.consumer.flushIntervalMs }}
+          auto_offset_reset: {{ .Values.appConfig.kafka.consumer.autoOffsetReset | quote }}
+          enable_auto_commit: {{ .Values.appConfig.kafka.consumer.enableAutoCommit }}
+
+      database:
+        partition_pre_create_months: {{ .Values.appConfig.database.partitionPreCreateMonths }}
+        partition_retention_months: {{ .Values.appConfig.database.partitionRetentionMonths }}
+        partition_check_interval_seconds: {{ .Values.appConfig.database.partitionCheckIntervalSeconds }}
+{{- end -}}
+{{- end }}

@@ -1,0 +1,50 @@
+{
+  "events": [
+    {
+      "specversion": "1.0",
+      "id": "smoke-08-batch-a",
+      "source": "/openg2p/auth",
+      "type": "org.openg2p.auth.logout",
+      "time": "2026-04-22T18:00:00Z",
+      "data": {
+        "actor": { "type": "user", "id": "u_4421" },
+        "action": "logout",
+        "outcome": "success"
+      }
+    },
+    {
+      "specversion": "1.0",
+      "id": "smoke-08-batch-b",
+      "source": "/openg2p/program-service",
+      "type": "org.openg2p.program.enrolled",
+      "subject": "beneficiary/b_1029384756",
+      "time": "2026-04-22T14:15:00Z",
+      "data": {
+        "actor": { "type": "user", "id": "u_4421" },
+        "action": "enroll",
+        "outcome": "success",
+        "resource": {
+          "type": "beneficiary",
+          "id": "b_1029384756",
+          "program_id": "pmt_2025_q2"
+        }
+      }
+    },
+    {
+      "specversion": "1.0",
+      "id": "smoke-08-batch-c",
+      "source": "/openg2p/config-service",
+      "type": "org.openg2p.config.changed",
+      "time": "2026-04-22T19:30:00Z",
+      "data": {
+        "actor": { "type": "user", "id": "u_admin", "roles": ["admin"] },
+        "action": "update",
+        "outcome": "success",
+        "resource": { "type": "config", "id": "payment.limit.default" },
+        "changes": [
+          { "field": "max_amount", "from": "5000", "to": "10000" }
+        ]
+      }
+    }
+  ]
+}

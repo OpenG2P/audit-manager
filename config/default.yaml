@@ -1,0 +1,41 @@
+audit_manager:
+  # Service metadata
+  service_id: openg2p.auditmanager
+  api_version: "1.0"
+
+  # HTTP ingest
+  ingest:
+    # In-memory bounded queue between HTTP handlers and the Kafka producer.
+    # Overflow returns 503 to callers — never silently drops.
+    queue_max_size: 10000
+    # Maximum events per single batch POST request.
+    max_batch_size: 500
+
+  # Kafka
+  kafka:
+    bootstrap_servers: kafka:9092
+    topic: openg2p.audit.events
+    dlq_topic: openg2p.audit.dlq
+    client_id: openg2p-audit-manager
+    consumer_group: openg2p-audit-consumer
+    producer:
+      acks: "1"
+      linger_ms: 50
+      compression_type: zstd
+      max_batch_size: 524288   # 512 KB
+    consumer:
+      # Trigger a Postgres flush after this many records or flush_interval_ms.
+      batch_max_records: 500
+      flush_interval_ms: 1000
+      auto_offset_reset: earliest
+      # We commit offsets manually after each Postgres batch is persisted.
+      enable_auto_commit: false
+
+  # Postgres audit store
+  database:
+    # Number of future monthly partitions to pre-create (including current).
+    partition_pre_create_months: 3
+    # Retention in months. 0 disables automatic drop.
+    partition_retention_months: 84  # 7 years
+    # How often (seconds) the partition maintainer runs.
+    partition_check_interval_seconds: 3600

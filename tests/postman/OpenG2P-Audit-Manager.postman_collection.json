@@ -1,0 +1,362 @@
+{
+  "info": {
+    "name": "OpenG2P Audit Manager",
+    "_postman_id": "1d5d9cde-7a8b-4e14-9b2c-0aa4f6e2b101",
+    "description": "Smoke-test collection for the OpenG2P Audit Manager service. Covers the full CloudEvents ingest API plus representative event shapes: login success/failure, beneficiary view/update, payment approve/reverse (system-initiated), access-denied, and a batched submission. All POSTs should return 202 Accepted immediately; events land in Postgres via Kafka within a few seconds.\n\nDefault base URL points at `docker compose up` on localhost. Override the `baseUrl` collection variable for any other environment.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "description": "Base URL of the Audit Manager. Override per-environment."
+    },
+    {
+      "key": "apiPrefix",
+      "value": "/v1/auditmanager",
+      "description": "OpenG2P service prefix — do not change."
+    }
+  ],
+  "item": [
+    {
+      "name": "Service endpoints",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/health",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["health"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('status = UP', () => pm.expect(pm.response.json().response.status).to.eql('UP'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /version",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/version",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["version"]
+            }
+          }
+        },
+        {
+          "name": "GET /config",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/config",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["config"]
+            }
+          }
+        },
+        {
+          "name": "GET /docs (Swagger UI)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/docs",
+              "host": ["{{baseUrl}}"],
+              "path": ["docs"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Single events — success",
+      "item": [
+        {
+          "name": "POST /events — auth.login (success)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "content-type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/events",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["events"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"specversion\": \"1.0\",\n  \"id\": \"pm-01-login-success\",\n  \"source\": \"/openg2p/auth\",\n  \"type\": \"org.openg2p.auth.login\",\n  \"time\": \"2026-04-22T14:03:21Z\",\n  \"data\": {\n    \"actor\":   { \"type\": \"user\", \"id\": \"u_4421\", \"name\": \"fatima.k\" },\n    \"action\":  \"login\",\n    \"outcome\": \"success\",\n    \"context\": { \"ip\": \"10.2.14.88\", \"mfa\": \"totp\" }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('202 Accepted', () => pm.response.to.have.status(202));",
+                  "pm.test('id echoed', () => pm.expect(pm.response.json().response.accepted).to.eql('pm-01-login-success'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /events — beneficiary.viewed (with trace)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "content-type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/events",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["events"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"specversion\": \"1.0\",\n  \"id\": \"pm-03-beneficiary-viewed\",\n  \"source\": \"/openg2p/beneficiary-service\",\n  \"type\": \"org.openg2p.beneficiary.viewed\",\n  \"subject\": \"beneficiary/b_1029384756\",\n  \"time\": \"2026-04-22T14:05:10Z\",\n  \"traceparent\": \"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01\",\n  \"data\": {\n    \"actor\":    { \"type\": \"user\", \"id\": \"u_4421\" },\n    \"action\":   \"read\",\n    \"outcome\":  \"success\",\n    \"resource\": { \"type\": \"beneficiary\", \"id\": \"b_1029384756\" },\n    \"context\":  { \"reason\": \"eligibility_review\", \"case_id\": \"c_778\" }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('202 Accepted', () => pm.response.to.have.status(202));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /events — beneficiary.updated (with changes diff)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "content-type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/events",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["events"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"specversion\": \"1.0\",\n  \"id\": \"pm-04-beneficiary-updated\",\n  \"source\": \"/openg2p/beneficiary-service\",\n  \"type\": \"org.openg2p.beneficiary.updated\",\n  \"subject\": \"beneficiary/b_1029384756\",\n  \"time\": \"2026-04-22T14:06:45Z\",\n  \"data\": {\n    \"actor\":    { \"type\": \"user\", \"id\": \"u_4421\" },\n    \"action\":   \"update\",\n    \"outcome\":  \"success\",\n    \"resource\": { \"type\": \"beneficiary\", \"id\": \"b_1029384756\" },\n    \"changes\":  [\n      { \"field\": \"phone\", \"from\": \"+91...21\", \"to\": \"+91...88\" },\n      { \"field\": \"bank_account\", \"from\": \"****4421\", \"to\": \"****9910\" }\n    ]\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('202 Accepted', () => pm.response.to.have.status(202));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /events — payment.approved",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "content-type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/events",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["events"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"specversion\": \"1.0\",\n  \"id\": \"pm-05-payment-approved\",\n  \"source\": \"/openg2p/payment-service\",\n  \"type\": \"org.openg2p.payment.approved\",\n  \"subject\": \"payment/pay_55231\",\n  \"time\": \"2026-04-22T14:10:00Z\",\n  \"data\": {\n    \"actor\":    { \"type\": \"user\", \"id\": \"u_9911\", \"roles\": [\"approver.l2\"] },\n    \"action\":   \"approve\",\n    \"outcome\":  \"success\",\n    \"resource\": { \"type\": \"payment\", \"id\": \"pay_55231\", \"amount\": 2500, \"currency\": \"INR\", \"beneficiary_id\": \"b_1029384756\" },\n    \"context\":  { \"approval_level\": 2 }\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('202 Accepted', () => pm.response.to.have.status(202));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /events — payment.reversed (system actor)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "content-type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/events",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["events"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"specversion\": \"1.0\",\n  \"id\": \"pm-06-payment-reversed\",\n  \"source\": \"/openg2p/payment-recon\",\n  \"type\": \"org.openg2p.payment.reversed\",\n  \"subject\": \"payment/pay_55231\",\n  \"time\": \"2026-04-22T16:00:00Z\",\n  \"data\": {\n    \"actor\":    { \"type\": \"system\", \"id\": \"reconciliation-job\" },\n    \"action\":   \"reverse\",\n    \"outcome\":  \"success\",\n    \"resource\": { \"type\": \"payment\", \"id\": \"pay_55231\" },\n    \"reason\":   \"bank_rejection\",\n    \"context\":  { \"bank_code\": \"E102\" }\n  }\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Single events — failure / denied",
+      "item": [
+        {
+          "name": "POST /events — auth.login_failed",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "content-type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/events",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["events"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"specversion\": \"1.0\",\n  \"id\": \"pm-02-login-failed\",\n  \"source\": \"/openg2p/auth\",\n  \"type\": \"org.openg2p.auth.login_failed\",\n  \"time\": \"2026-04-22T14:04:02Z\",\n  \"data\": {\n    \"actor\":   { \"type\": \"user\", \"id\": \"u_4421\" },\n    \"action\":  \"login\",\n    \"outcome\": \"failure\",\n    \"reason\":  \"invalid_password\",\n    \"context\": { \"attempt_number\": 3 }\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "POST /events — beneficiary.viewed (outcome=denied)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "content-type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/events",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["events"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"specversion\": \"1.0\",\n  \"id\": \"pm-07-access-denied\",\n  \"source\": \"/openg2p/beneficiary-service\",\n  \"type\": \"org.openg2p.beneficiary.viewed\",\n  \"subject\": \"beneficiary/b_9999999999\",\n  \"time\": \"2026-04-22T14:20:00Z\",\n  \"data\": {\n    \"actor\":    { \"type\": \"user\", \"id\": \"u_7777\", \"roles\": [\"viewer.basic\"] },\n    \"action\":   \"read\",\n    \"outcome\":  \"denied\",\n    \"reason\":   \"insufficient_role\",\n    \"resource\": { \"type\": \"beneficiary\", \"id\": \"b_9999999999\" }\n  }\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Batch",
+      "item": [
+        {
+          "name": "POST /events/batch — 3 events",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "content-type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/events/batch",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["events", "batch"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"events\": [\n    {\n      \"specversion\": \"1.0\",\n      \"id\": \"pm-08-batch-a\",\n      \"source\": \"/openg2p/auth\",\n      \"type\": \"org.openg2p.auth.logout\",\n      \"time\": \"2026-04-22T18:00:00Z\",\n      \"data\": {\n        \"actor\":   { \"type\": \"user\", \"id\": \"u_4421\" },\n        \"action\":  \"logout\",\n        \"outcome\": \"success\"\n      }\n    },\n    {\n      \"specversion\": \"1.0\",\n      \"id\": \"pm-08-batch-b\",\n      \"source\": \"/openg2p/program-service\",\n      \"type\": \"org.openg2p.program.enrolled\",\n      \"subject\": \"beneficiary/b_1029384756\",\n      \"time\": \"2026-04-22T14:15:00Z\",\n      \"data\": {\n        \"actor\":    { \"type\": \"user\", \"id\": \"u_4421\" },\n        \"action\":   \"enroll\",\n        \"outcome\":  \"success\",\n        \"resource\": { \"type\": \"beneficiary\", \"id\": \"b_1029384756\", \"program_id\": \"pmt_2025_q2\" }\n      }\n    },\n    {\n      \"specversion\": \"1.0\",\n      \"id\": \"pm-08-batch-c\",\n      \"source\": \"/openg2p/config-service\",\n      \"type\": \"org.openg2p.config.changed\",\n      \"time\": \"2026-04-22T19:30:00Z\",\n      \"data\": {\n        \"actor\":    { \"type\": \"user\", \"id\": \"u_admin\", \"roles\": [\"admin\"] },\n        \"action\":   \"update\",\n        \"outcome\":  \"success\",\n        \"resource\": { \"type\": \"config\", \"id\": \"payment.limit.default\" },\n        \"changes\":  [{ \"field\": \"max_amount\", \"from\": \"5000\", \"to\": \"10000\" }]\n      }\n    }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('202 Accepted', () => pm.response.to.have.status(202));",
+                  "pm.test('all 3 accepted', () => pm.expect(pm.response.json().response.count).to.eql(3));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Negative tests",
+      "item": [
+        {
+          "name": "POST /events — missing required field (actor) → 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "content-type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/events",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["events"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"specversion\": \"1.0\",\n  \"id\": \"pm-99-invalid-no-actor\",\n  \"source\": \"/openg2p/beneficiary-service\",\n  \"type\": \"org.openg2p.beneficiary.updated\",\n  \"time\": \"2026-04-22T14:30:00Z\",\n  \"data\": {\n    \"action\": \"update\",\n    \"outcome\": \"success\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('4xx rejection', () => pm.expect(pm.response.code).to.be.within(400, 499));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /events — invalid outcome value → 422",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "content-type", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}{{apiPrefix}}/events",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
+              "path": ["events"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"specversion\": \"1.0\",\n  \"id\": \"pm-99-invalid-outcome\",\n  \"source\": \"/openg2p/auth\",\n  \"type\": \"org.openg2p.auth.login\",\n  \"time\": \"2026-04-22T14:30:00Z\",\n  \"data\": {\n    \"actor\":   { \"type\": \"user\", \"id\": \"u_1\" },\n    \"action\":  \"login\",\n    \"outcome\": \"maybe-it-worked\"\n  }\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('4xx rejection', () => pm.expect(pm.response.code).to.be.within(400, 499));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,219 @@
+global:
+  auditManagerHostname: 'auditmanager.trial.openg2p.org'
+
+  # Database
+  postgresqlHost: commons-postgresql
+  auditManagerDB: '{{ printf "%s" .Release.Name | replace "-" "_" }}'
+  auditManagerDBPort: 5432
+  auditManagerDBUser: '{{ printf "%s_user" .Release.Name | replace "-" "_" }}'
+  auditManagerDBSecret: '{{ .Release.Name }}'
+  auditManagerDBUserPasswordKey: '{{ .Release.Name }}-db-user'
+
+  # Kafka
+  kafkaBootstrapServers: 'kafka:9092'
+
+postgres-init:
+  enabled: true
+  postgresql:
+    host: '{{ .Values.global.postgresqlHost }}'
+    port: 5432
+    existingSecret: commons-postgresql
+    existingSecretPostgresPasswordKey: postgres-password
+  databases:
+    - name: '{{ tpl .Values.global.auditManagerDB $ }}'
+      user: '{{ tpl .Values.global.auditManagerDBUser $ }}'
+      secret: '{{ tpl .Values.global.auditManagerDBSecret $ }}'
+      secretUserPasswordKey: '{{ tpl .Values.global.auditManagerDBUserPasswordKey $ }}'
+
+auditManager:
+  enabled: true
+  nameOverride: audit-manager
+  hostname: '{{ tpl .Values.global.auditManagerHostname $ }}'
+
+  replicaCount: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 12
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  updateStrategy:
+    type: RollingUpdate
+  serviceAccount:
+    create: false
+    name: ""
+  image:
+    repository: openg2p/openg2p-audit-manager
+    tag: "1.0.0"
+    pullPolicy: Always
+  podSecurityContext:
+    enabled: false
+    fsGroup: 1000
+  containerSecurityContext:
+    enabled: false
+    runAsUser: 1000
+    runAsNonRoot: true
+
+  # -- Resource requests/limits. Tune to expected event volume.
+  # resources:
+  #   requests:
+  #     cpu: 200m
+  #     memory: 256Mi
+  #   limits:
+  #     cpu: 1000m
+  #     memory: 512Mi
+
+  service:
+    type: ClusterIP
+    port: 80
+    externalTrafficPolicy: Cluster
+
+  istio:
+    enabled: true
+    virtualservice:
+      enabled: true
+      host: '{{ tpl .Values.auditManager.hostname $ }}'
+      gateway: "internal"
+      destination: ""
+      destinationPort: '{{ .Values.auditManager.service.port }}'
+      prefix: /v1/auditmanager/
+      rewriteUri: ""
+    gateway:
+      enabled: false
+      host: '{{ tpl .Values.auditManager.hostname $ }}'
+      ingressController:
+        istio: ingressgateway
+      httpTlsRedirect: false
+      httpEnabled: true
+      httpsEnabled: false
+      tls:
+        mode: SIMPLE
+        credentialName: ""
+
+  # ---------------------------------------------------------------------------
+  # Application config — rendered as a ConfigMap and mounted at
+  # /app/config/config.yaml. See src/audit_manager/config.py for shape.
+  # ---------------------------------------------------------------------------
+  appConfig:
+    serviceId: openg2p.auditmanager
+    apiVersion: "1.0"
+
+    ingest:
+      queueMaxSize: 10000
+      maxBatchSize: 500
+
+    kafka:
+      topic: openg2p.audit.events
+      dlqTopic: openg2p.audit.dlq
+      clientId: openg2p-audit-manager
+      consumerGroup: openg2p-audit-consumer
+      producer:
+        acks: "1"
+        lingerMs: 50
+        compressionType: zstd
+        maxBatchSize: 524288
+      consumer:
+        batchMaxRecords: 500
+        flushIntervalMs: 1000
+        autoOffsetReset: earliest
+        enableAutoCommit: false
+
+    database:
+      partitionPreCreateMonths: 3
+      partitionRetentionMonths: 84   # 7 years; 0 to disable auto-drop
+      partitionCheckIntervalSeconds: 3600
+
+  # ---------------------------------------------------------------------------
+  # Environment variables
+  # ---------------------------------------------------------------------------
+  envVars:
+    # -- Database connection (derived from global values)
+    DB_HOST: '{{ .Values.global.postgresqlHost }}'
+    DB_PORT: '{{ .Values.global.auditManagerDBPort }}'
+    DB_NAME: '{{ tpl .Values.global.auditManagerDB $ }}'
+    DB_USER: '{{ tpl .Values.global.auditManagerDBUser $ }}'
+    # -- Kafka bootstrap — injected as env so it's easily overridden per-env.
+    AUDIT_MANAGER__KAFKA__BOOTSTRAP_SERVERS: '{{ .Values.global.kafkaBootstrapServers }}'
+    # -- Path to YAML config file inside the container (mounted from ConfigMap).
+    CONFIG_PATH: /app/config/config.yaml
+    # UVICORN_WORKERS: "1"
+    # UVICORN_LOG_LEVEL: "info"
+
+  envVarsFrom:
+    DB_PASSWORD:
+      secretKeyRef:
+        name: '{{ tpl .Values.global.auditManagerDBSecret $ }}'
+        key: '{{ tpl .Values.global.auditManagerDBUserPasswordKey $ }}'
+
+  startupProbe:
+    enabled: true
+    httpGet:
+      path: /v1/auditmanager/health
+      port: http
+    initialDelaySeconds: 0
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30
+    successThreshold: 1
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: /v1/auditmanager/health
+      port: http
+    initialDelaySeconds: 20
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 6
+    successThreshold: 1
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: /v1/auditmanager/health
+      port: http
+    initialDelaySeconds: 0
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
+    successThreshold: 1
+
+  postgresCheckerInit:
+    enabled: true
+    image:
+      repository: jbergknoff/postgresql-client
+      tag: latest
+      pullPolicy: IfNotPresent
+    command:
+    - 'sh'
+    args:
+    - '-c'
+    - 'until psql "postgresql://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}" -c "SELECT 1" > /dev/null 2>&1; do echo "Waiting for database ${DB_NAME} to be ready..."; sleep 3; done'
+    containerSecurityContext:
+      enabled: false
+
+  # ---------------------------------------------------------------------------
+  # Kafka topic provisioning.
+  # Runs once as a Helm pre-install / pre-upgrade hook.
+  # Idempotent — creates topics if missing, grows partition count if below
+  # the configured value. Partition count can only be increased.
+  # Disable this if topics are managed externally (e.g. Strimzi KafkaTopic CRs).
+  # ---------------------------------------------------------------------------
+  topicInit:
+    enabled: true
+    image:
+      repository: bitnami/kafka
+      tag: "3.7"
+      pullPolicy: IfNotPresent
+    # Number of partitions for the audit events topic. The maximum consumer
+    # parallelism is bounded by this number — keep HPA maxReplicas ≤ partitions.
+    partitions: 12
+    # Broker replication factor. Must be ≤ the number of brokers in the cluster.
+    replicationFactor: 3
+    # How long Kafka retains messages on the topic. Long enough for the
+    # consumer to recover from outages and replay. Default: 7 days.
+    retentionMs: "604800000"
+    compressionType: zstd
+    backoffLimit: 3
+    containerSecurityContext:
+      enabled: false
+
+  containerPort: 8000

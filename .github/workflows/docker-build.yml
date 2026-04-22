@@ -1,0 +1,100 @@
+name: Build Docker Images
+
+on:
+  push:
+    branches:
+      - "**"
+    tags-ignore:
+      - '**'
+    paths:
+      - 'src/**'
+      - 'config/**'
+      - 'Dockerfile'
+      - 'pyproject.toml'
+      - 'requirements-test.txt'
+      - '.github/workflows/docker-build.yml'
+  workflow_dispatch:
+
+env:
+  NAMESPACE: ${{ secrets.docker_hub_organisation || 'openg2p' }}
+  REGISTRY: docker.io
+
+jobs:
+  build-audit-manager:
+    name: Build Audit Manager Docker Image
+    runs-on: ubuntu-latest
+    env:
+      SERVICE_NAME: openg2p-audit-manager
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract branch name
+        shell: bash
+        run: |
+          BRANCH_NAME=$(echo ${{ github.ref }} | sed -e 's,.*/\(.*\),\1,')
+          VERSION=$BRANCH_NAME
+          if [[ $BRANCH_NAME == master || $BRANCH_NAME == main ]]; then
+            VERSION=develop
+          fi
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "IMAGE_ID=${{ env.NAMESPACE }}/${{ env.SERVICE_NAME }}" >> $GITHUB_ENV
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Generate OpenAPI spec
+        run: |
+          pip install -e .
+          python scripts/generate_openapi.py > docs/openapi.json
+
+      - name: Commit OpenAPI spec if changed
+        run: |
+          git config user.name "openg2pbot"
+          git config user.email "bot@openg2p.org"
+          if ! git diff --quiet docs/openapi.json; then
+            git add docs/openapi.json
+            git commit -m "chore: auto-generate OpenAPI spec [skip ci]"
+            git push
+          fi
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          tags: ${{ env.IMAGE_ID }}:${{ env.VERSION }}
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ github.event.head_commit.timestamp }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Login to Docker Hub
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.docker_hub_actor }}
+          password: ${{ secrets.docker_hub_token }}
+
+      - name: Push Docker image
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_ID }}:${{ env.VERSION }}
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ github.event.head_commit.timestamp }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

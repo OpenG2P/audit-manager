@@ -1,0 +1,25 @@
+{
+  "specversion": "1.0",
+  "id": "smoke-04-beneficiary-updated",
+  "source": "/openg2p/beneficiary-service",
+  "type": "org.openg2p.beneficiary.updated",
+  "subject": "beneficiary/b_1029384756",
+  "time": "2026-04-22T14:06:45Z",
+  "traceparent": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+  "data": {
+    "actor": {
+      "type": "user",
+      "id": "u_4421"
+    },
+    "action": "update",
+    "outcome": "success",
+    "resource": {
+      "type": "beneficiary",
+      "id": "b_1029384756"
+    },
+    "changes": [
+      { "field": "phone", "from": "+91...21", "to": "+91...88" },
+      { "field": "bank_account", "from": "****4421", "to": "****9910" }
+    ]
+  }
+}

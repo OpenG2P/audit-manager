@@ -1,0 +1,139 @@
+questions:
+
+# General
+- variable: global.auditManagerHostname
+  description: Hostname under which the Audit Manager service will be accessed
+  type: string
+  label: Audit Manager Hostname
+  group: General
+
+- variable: global.postgresqlHost
+  description: PostgreSQL server host
+  type: string
+  label: PostgreSQL Server Host
+  group: General
+
+- variable: global.kafkaBootstrapServers
+  description: Kafka bootstrap servers (comma-separated host:port)
+  type: string
+  label: Kafka Bootstrap Servers
+  group: General
+
+- variable: postgres-init.enabled
+  description: Run Postgres init job to create database and user
+  type: boolean
+  label: Postgres Init
+  group: General
+
+- variable: auditManager.enabled
+  description: Install Audit Manager service
+  type: boolean
+  label: Audit Manager
+  group: General
+
+# Ingest & Buffering
+- variable: auditManager.appConfig.ingest.queueMaxSize
+  description: In-process queue size between HTTP ingest and Kafka publisher. Overflow returns 503.
+  type: int
+  label: Ingest Queue Size
+  group: Ingest & Buffering
+
+- variable: auditManager.appConfig.ingest.maxBatchSize
+  description: Maximum number of events per /events/batch POST
+  type: int
+  label: Max Batch Size
+  group: Ingest & Buffering
+
+# Kafka
+- variable: auditManager.appConfig.kafka.topic
+  description: Kafka topic for audit events
+  type: string
+  label: Audit Topic
+  group: Kafka
+
+- variable: auditManager.appConfig.kafka.dlqTopic
+  description: Kafka dead-letter topic for malformed events
+  type: string
+  label: DLQ Topic
+  group: Kafka
+
+- variable: auditManager.appConfig.kafka.consumerGroup
+  description: Kafka consumer group — all replicas share this group for partition assignment
+  type: string
+  label: Consumer Group
+  group: Kafka
+
+- variable: auditManager.topicInit.enabled
+  description: Provision the audit topic + DLQ on install/upgrade. Disable if topics are managed externally (e.g. Strimzi).
+  type: boolean
+  label: Provision Kafka Topics
+  group: Kafka
+
+- variable: auditManager.topicInit.partitions
+  description: Partition count for the audit events topic. Bounds the consumer parallelism — keep HPA max replicas ≤ this value.
+  type: int
+  label: Topic Partitions
+  group: Kafka
+
+- variable: auditManager.topicInit.replicationFactor
+  description: Kafka replication factor. Must be ≤ number of brokers.
+  type: int
+  label: Replication Factor
+  group: Kafka
+
+- variable: auditManager.topicInit.retentionMs
+  description: Retention on the Kafka topic (milliseconds). Long enough for consumers to recover from outages and replay.
+  type: string
+  label: Topic Retention (ms)
+  group: Kafka
+
+# Database / Retention
+- variable: auditManager.appConfig.database.partitionPreCreateMonths
+  description: Monthly partitions to pre-create (current + N-1 future months)
+  type: int
+  label: Partition Pre-create Months
+  group: Retention
+
+- variable: auditManager.appConfig.database.partitionRetentionMonths
+  description: Retention in months. Older monthly partitions are dropped. Set 0 to disable.
+  type: int
+  label: Partition Retention Months
+  group: Retention
+
+# Image
+- variable: auditManager.image.repository
+  description: Docker image repository for the Audit Manager
+  type: string
+  label: Image Repository
+  group: Image
+
+- variable: auditManager.image.tag
+  description: Docker image tag
+  type: string
+  label: Image Tag
+  group: Image
+
+# Scaling
+- variable: auditManager.replicaCount
+  description: Number of replicas (ignored if HPA is enabled)
+  type: int
+  label: Replica Count
+  group: Scaling
+
+- variable: auditManager.autoscaling.enabled
+  description: Enable Horizontal Pod Autoscaler
+  type: boolean
+  label: Enable HPA
+  group: Scaling
+
+- variable: auditManager.autoscaling.minReplicas
+  description: Minimum replicas under HPA
+  type: int
+  label: HPA Min Replicas
+  group: Scaling
+
+- variable: auditManager.autoscaling.maxReplicas
+  description: Maximum replicas under HPA. Keep ≤ Kafka partition count on the audit topic.
+  type: int
+  label: HPA Max Replicas
+  group: Scaling

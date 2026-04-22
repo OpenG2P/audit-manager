@@ -1,0 +1,24 @@
+{
+  "specversion": "1.0",
+  "id": "smoke-01-login-success",
+  "source": "/openg2p/auth",
+  "type": "org.openg2p.auth.login",
+  "time": "2026-04-22T14:03:21Z",
+  "datacontenttype": "application/json",
+  "data": {
+    "actor": {
+      "type": "user",
+      "id": "u_4421",
+      "name": "fatima.k",
+      "roles": ["program.operator"],
+      "ip": "10.2.14.88",
+      "session_id": "sess_93ka_smoke"
+    },
+    "action": "login",
+    "outcome": "success",
+    "context": {
+      "mfa": "totp",
+      "user_agent": "Mozilla/5.0"
+    }
+  }
+}

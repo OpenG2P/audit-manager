@@ -1,0 +1,20 @@
+{
+  "specversion": "1.0",
+  "id": "smoke-02-login-failed",
+  "source": "/openg2p/auth",
+  "type": "org.openg2p.auth.login_failed",
+  "time": "2026-04-22T14:04:02Z",
+  "data": {
+    "actor": {
+      "type": "user",
+      "id": "u_4421",
+      "ip": "10.2.14.88"
+    },
+    "action": "login",
+    "outcome": "failure",
+    "reason": "invalid_password",
+    "context": {
+      "attempt_number": 3
+    }
+  }
+}
