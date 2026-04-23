@@ -21,3 +21,11 @@
 .idea/
 *.tmproj
 .vscode/
+# Local-only overrides (never belong in the published chart)
+values-local*.yaml
+values-*.local.yaml
+values-secret*.yaml
+secrets*.yaml
+*.dec.yaml
+*.sops.yaml.dec
+*.plain.yaml

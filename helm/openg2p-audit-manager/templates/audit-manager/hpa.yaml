@@ -2,7 +2,10 @@
 {{- $context := dict "Values" (merge (deepCopy $values) (dict "global" .Values.global)) "Chart" .Chart "Release" .Release "Files" .Files "Capabilities" .Capabilities -}}
 {{- with $context -}}
 {{- if .Values.autoscaling.enabled }}
-apiVersion: {{ include "common.capabilities.hpa.apiVersion" . }}
+# autoscaling/v2 is GA since Kubernetes 1.23. Hardcoded rather than routing
+# through `common.capabilities.hpa.apiVersion`, which breaks `helm lint` on
+# older common-library versions because `$kubeVersion` is unset during lint.
+apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: {{ include "common.names.fullname" . }}

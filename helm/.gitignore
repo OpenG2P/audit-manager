@@ -1,0 +1,32 @@
+# Helm chart artifacts and local overrides.
+#
+# Subchart dependencies are NOT committed — CI runs `helm dep up` to
+# re-download them (see .github/workflows/publish-helm.yml). This keeps
+# the repo slim and avoids stale committed copies.
+
+# Downloaded subchart dependencies
+*/charts/
+
+# Chart.lock is regenerated alongside the subchart downloads
+Chart.lock
+
+# `helm package` outputs
+*.tgz
+
+# Local overrides — never commit these (may contain secrets, per-env values)
+values-local*.yaml
+values-*.local.yaml
+values-secret*.yaml
+secrets*.yaml
+*.dec.yaml
+
+# sops / age / decrypted files
+*.sops.yaml.dec
+*.plain.yaml
+
+# OS / editor noise
+.DS_Store
+*.swp
+*.swo
+.vscode/
+.idea/

@@ -31,20 +31,44 @@ spec:
           args:
             - |
               set -eu
+              # apache/kafka image ships scripts here but doesn't put /opt/kafka/bin on PATH.
+              KAFKA_TOPICS=/opt/kafka/bin/kafka-topics.sh
+
               echo "Waiting for Kafka at ${KAFKA_BOOTSTRAP}..."
+              HOST="${KAFKA_BOOTSTRAP%%:*}"
+
+              reachable=false
               for i in $(seq 1 60); do
-                if kafka-topics.sh --bootstrap-server "${KAFKA_BOOTSTRAP}" --list >/dev/null 2>&1; then
+                if "${KAFKA_TOPICS}" --bootstrap-server "${KAFKA_BOOTSTRAP}" --list >/tmp/ok 2>/tmp/err; then
                   echo "Kafka reachable."
+                  reachable=true
                   break
                 fi
-                echo "  attempt ${i}/60 — retrying in 5s"
+
+                echo "  attempt ${i}/60 — kafka-topics.sh failed:"
+                sed 's/^/    /' /tmp/err || true
+
+                # Extra diagnostics every 6th attempt (~30s). DNS only — busybox sh
+                # has no /dev/tcp, and the kafka-topics.sh error above already tells
+                # us whether the port is reachable.
+                if [ $((i % 6)) -eq 0 ]; then
+                  echo "  --- diagnostics ---"
+                  getent hosts "${HOST}" 2>&1 | sed 's/^/    dns: /' || echo "    dns: ${HOST} does not resolve"
+                  echo "  -------------------"
+                fi
                 sleep 5
               done
 
+              if [ "$reachable" != "true" ]; then
+                echo "ERROR: could not reach Kafka at ${KAFKA_BOOTSTRAP} after 60 attempts"
+                echo "Namespace of this pod: $(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace 2>/dev/null || echo unknown)"
+                exit 1
+              fi
+
               ensure_topic() {
-                local topic="$1"
+                topic="$1"
                 echo "Ensuring topic ${topic} (partitions=${PARTITIONS}, rf=${REPLICATION}, retention=${RETENTION_MS}ms)"
-                kafka-topics.sh --bootstrap-server "${KAFKA_BOOTSTRAP}" \
+                "${KAFKA_TOPICS}" --bootstrap-server "${KAFKA_BOOTSTRAP}" \
                   --create --if-not-exists \
                   --topic "${topic}" \
                   --partitions "${PARTITIONS}" \
@@ -54,13 +78,13 @@ spec:
 
                 # If the topic already existed with fewer partitions, grow it.
                 # Partition count can only be increased, never decreased.
-                current=$(kafka-topics.sh --bootstrap-server "${KAFKA_BOOTSTRAP}" \
+                current=$("${KAFKA_TOPICS}" --bootstrap-server "${KAFKA_BOOTSTRAP}" \
                   --describe --topic "${topic}" \
                   | awk -F'PartitionCount: ' '/PartitionCount:/ {print $2}' \
                   | awk '{print $1}')
                 if [ -n "${current}" ] && [ "${current}" -lt "${PARTITIONS}" ]; then
                   echo "Growing ${topic} partitions from ${current} to ${PARTITIONS}"
-                  kafka-topics.sh --bootstrap-server "${KAFKA_BOOTSTRAP}" \
+                  "${KAFKA_TOPICS}" --bootstrap-server "${KAFKA_BOOTSTRAP}" \
                     --alter --topic "${topic}" --partitions "${PARTITIONS}"
                 fi
               }

@@ -8,7 +8,7 @@ dependencies:
   repository: https://openg2p.github.io/openg2p-helm
   version: 2.30.0
 - name: postgres-init
-  version: 0.0.0-develop
+  version: 1.1.0
   repository: https://openg2p.github.io/openg2p-helm
   condition: postgres-init.enabled
 icon: https://openg2p.github.io/openg2p-helm/openg2p-logo.png

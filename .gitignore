@@ -31,3 +31,6 @@ tests/assets/
 # Environment files
 .env
 .env.*
+
+# Helm package outputs (CI/local `helm package` lands .tgz at repo root)
+/*.tgz

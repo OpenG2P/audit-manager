@@ -9,8 +9,8 @@ global:
   auditManagerDBSecret: '{{ .Release.Name }}'
   auditManagerDBUserPasswordKey: '{{ .Release.Name }}-db-user'
 
-  # Kafka
-  kafkaBootstrapServers: 'kafka:9092'
+  # Kafka — OpenG2P's commons-kafka ClusterIP in the same namespace.
+  kafkaBootstrapServers: 'commons-kafka:9092'
 
 postgres-init:
   enabled: true
