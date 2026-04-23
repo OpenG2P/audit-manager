@@ -71,8 +71,8 @@
           "request": {
             "method": "GET",
             "url": {
-              "raw": "{{baseUrl}}/docs",
-              "host": ["{{baseUrl}}"],
+              "raw": "{{baseUrl}}{{apiPrefix}}/docs",
+              "host": ["{{baseUrl}}{{apiPrefix}}"],
               "path": ["docs"]
             }
           }

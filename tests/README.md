@@ -117,7 +117,7 @@ Postman (or any compatible tool — Bruno, Insomnia with conversion, etc.).
 
 Folders:
 
-- **Service endpoints** — `/health`, `/version`, `/config`, `/docs`
+- **Service endpoints** — `/v1/auditmanager/health`, `/v1/auditmanager/version`, `/v1/auditmanager/config`, `/v1/auditmanager/docs`
 - **Single events — success** — login, beneficiary view, beneficiary update
   with diff, payment approve, system-initiated payment reverse
 - **Single events — failure / denied** — login_failed, access-denied

@@ -127,9 +127,11 @@ app = FastAPI(
     ),
     version="0.1.0",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
+    # Docs live under the /v1/auditmanager/ prefix so they're routed by the
+    # Istio VirtualService (which only forwards requests matching that prefix).
+    docs_url="/v1/auditmanager/docs",
+    redoc_url="/v1/auditmanager/redoc",
+    openapi_url="/v1/auditmanager/openapi.json",
 )
 
 app.include_router(router)
