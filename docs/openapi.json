@@ -8,7 +8,8 @@
   "paths": {
     "/v1/auditmanager/events": {
       "post": {
-        "summary": "Ingest Event",
+        "summary": "Ingest a single CloudEvent",
+        "description": "Accepts one CloudEvent, validates its schema, and enqueues it for durable publication to Kafka.\n\nReturns **202 Accepted** the moment the event lands in the in-process queue \u2014 Kafka and Postgres latency are fully hidden from the caller. Delivery from there is at-least-once with idempotent inserts on (`id`, `occurred_at`), so replays after a crash never produce duplicate rows in the audit store.",
         "operationId": "ingest_event_v1_auditmanager_events_post",
         "requestBody": {
           "content": {
@@ -22,19 +23,31 @@
         },
         "responses": {
           "202": {
-            "description": "Successful Response",
+            "description": "Event accepted into the ingest queue. The `id` you submitted is echoed back.",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptedResponse"
+                }
               }
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Malformed CloudEvent \u2014 failed schema validation (missing required field, invalid `outcome` enum, unparseable `time`, etc.).",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service not ready or backpressure.\n\n- `AUD-004` \u2014 ingest queue full. Retry with exponential backoff + jitter.\n- `AUD-005` \u2014 service startup not complete.\n- `AUD-006` \u2014 database health check failed (surfaces via `/health`, but also blocks ingest readiness indirectly).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -44,7 +57,8 @@
     },
     "/v1/auditmanager/events/batch": {
       "post": {
-        "summary": "Ingest Batch",
+        "summary": "Ingest a batch of CloudEvents",
+        "description": "Accepts up to `ingest.max_batch_size` CloudEvents in a single request. Each event is validated and enqueued independently \u2014 same 202 semantics as `/events`. Events in the batch are not atomic: on queue overflow part way through, the response reports the count actually accepted.\n\nEvents in a batch become **separate rows** in Postgres (one per CloudEvent). Batching is a transport optimization \u2014 not a storage concept.",
         "operationId": "ingest_batch_v1_auditmanager_events_batch_post",
         "requestBody": {
           "content": {
@@ -58,19 +72,41 @@
         },
         "responses": {
           "202": {
-            "description": "Successful Response",
+            "description": "All events (or as many as fit before backpressure) accepted. The response echoes accepted ids.",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/BatchAcceptedResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`AUD-007` \u2014 batch payload exceeds the configured `ingest.max_batch_size`. Split into smaller batches.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
               }
             }
           },
           "422": {
-            "description": "Validation Error",
+            "description": "Malformed CloudEvent \u2014 failed schema validation (missing required field, invalid `outcome` enum, unparseable `time`, etc.).",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service not ready or backpressure.\n\n- `AUD-004` \u2014 ingest queue full. Retry with exponential backoff + jitter.\n- `AUD-005` \u2014 service startup not complete.\n- `AUD-006` \u2014 database health check failed (surfaces via `/health`, but also blocks ingest readiness indirectly).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -80,14 +116,27 @@
     },
     "/v1/auditmanager/health": {
       "get": {
-        "summary": "Health",
+        "summary": "Health / readiness probe",
+        "description": "Combined liveness + readiness probe. Returns **200** with `status: UP` only when service startup is complete **and** the Postgres connection is healthy. Kubernetes probes in the shipped Helm chart point at this endpoint.",
         "operationId": "health_v1_auditmanager_health_get",
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Service is ready to serve traffic.",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Not ready.\n\n- `AUD-005` \u2014 service startup not yet complete.\n- `AUD-006` \u2014 Postgres health check failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
               }
             }
           }
@@ -96,14 +145,17 @@
     },
     "/v1/auditmanager/version": {
       "get": {
-        "summary": "Version",
+        "summary": "Service version and build metadata",
+        "description": "Returns the running service version plus the git commit and build timestamp baked into the Docker image. Useful from probes and smoke tests to confirm which image is actually deployed.",
         "operationId": "version_v1_auditmanager_version_get",
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Version metadata.",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/VersionResponse"
+                }
               }
             }
           }
@@ -112,14 +164,17 @@
     },
     "/v1/auditmanager/config": {
       "get": {
-        "summary": "Config View",
+        "summary": "Effective non-sensitive configuration",
+        "description": "Returns the non-sensitive portion of the effective service configuration \u2014 ingest tunables, Kafka topic/group names, and partition-maintenance settings. Secrets and Kafka bootstrap URLs are deliberately excluded.",
         "operationId": "config_view_v1_auditmanager_config_get",
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "description": "Effective configuration snapshot.",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigResponse"
+                }
               }
             }
           }
@@ -129,6 +184,72 @@
   },
   "components": {
     "schemas": {
+      "AcceptedPayload": {
+        "properties": {
+          "accepted": {
+            "type": "string",
+            "title": "Accepted",
+            "description": "The `id` of the CloudEvent that was accepted into the ingest queue.",
+            "examples": [
+              "01HXQ9R2V3K8Y2ZP7N5FJ6M4A1"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "accepted"
+        ],
+        "title": "AcceptedPayload"
+      },
+      "AcceptedResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Constant \u2014 identifies the service that produced this envelope.",
+            "default": "openg2p.auditmanager",
+            "examples": [
+              "openg2p.auditmanager"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "Envelope schema version (not the service version).",
+            "default": "1.0",
+            "examples": [
+              "1.0"
+            ]
+          },
+          "responsetime": {
+            "type": "string",
+            "title": "Responsetime",
+            "description": "RFC3339 timestamp at which this response was produced.",
+            "examples": [
+              "2026-04-23T10:00:00.000Z"
+            ]
+          },
+          "response": {
+            "$ref": "#/components/schemas/AcceptedPayload"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            },
+            "type": "array",
+            "title": "Errors",
+            "examples": [
+              []
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "responsetime",
+          "response"
+        ],
+        "title": "AcceptedResponse"
+      },
       "Actor": {
         "properties": {
           "type": {
@@ -244,6 +365,88 @@
         "title": "AuditData",
         "description": "OpenG2P-specific `data` shape. Open \u2014 extra fields allowed per event type."
       },
+      "BatchAcceptedPayload": {
+        "properties": {
+          "accepted": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Accepted",
+            "description": "CloudEvent ids accepted into the ingest queue, in the order supplied.",
+            "examples": [
+              [
+                "01HXQ9R2V...",
+                "01HXQ9R2W...",
+                "01HXQ9R2X..."
+              ]
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "Number of events accepted (matches `len(accepted)`).",
+            "examples": [
+              3
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "accepted",
+          "count"
+        ],
+        "title": "BatchAcceptedPayload"
+      },
+      "BatchAcceptedResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Constant \u2014 identifies the service that produced this envelope.",
+            "default": "openg2p.auditmanager",
+            "examples": [
+              "openg2p.auditmanager"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "Envelope schema version (not the service version).",
+            "default": "1.0",
+            "examples": [
+              "1.0"
+            ]
+          },
+          "responsetime": {
+            "type": "string",
+            "title": "Responsetime",
+            "description": "RFC3339 timestamp at which this response was produced.",
+            "examples": [
+              "2026-04-23T10:00:00.000Z"
+            ]
+          },
+          "response": {
+            "$ref": "#/components/schemas/BatchAcceptedPayload"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            },
+            "type": "array",
+            "title": "Errors",
+            "examples": [
+              []
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "responsetime",
+          "response"
+        ],
+        "title": "BatchAcceptedResponse"
+      },
       "CloudEvent": {
         "properties": {
           "specversion": {
@@ -310,6 +513,218 @@
         "title": "CloudEvent",
         "description": "CloudEvents v1.0 envelope.\n\nSpec: https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md"
       },
+      "ConfigPayload": {
+        "properties": {
+          "service_id": {
+            "type": "string",
+            "title": "Service Id",
+            "examples": [
+              "openg2p.auditmanager"
+            ]
+          },
+          "api_version": {
+            "type": "string",
+            "title": "Api Version",
+            "examples": [
+              "1.0"
+            ]
+          },
+          "ingest": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Ingest",
+            "description": "Ingest-side config \u2014 queue bound, batch limit.",
+            "examples": [
+              {
+                "max_batch_size": 500,
+                "queue_max_size": 10000
+              }
+            ]
+          },
+          "kafka": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Kafka",
+            "description": "Kafka-side non-sensitive config \u2014 topic, DLQ topic, consumer group.",
+            "examples": [
+              {
+                "consumer_group": "openg2p-audit-consumer",
+                "dlq_topic": "openg2p.audit.dlq",
+                "topic": "openg2p.audit.events"
+              }
+            ]
+          },
+          "database": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Database",
+            "description": "Postgres-side config \u2014 partition pre-create and retention.",
+            "examples": [
+              {
+                "partition_check_interval_seconds": 3600,
+                "partition_pre_create_months": 3,
+                "partition_retention_months": 84
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "service_id",
+          "api_version",
+          "ingest",
+          "kafka",
+          "database"
+        ],
+        "title": "ConfigPayload",
+        "description": "Non-sensitive effective configuration. Shape follows `AuditManagerConfig`."
+      },
+      "ConfigResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Constant \u2014 identifies the service that produced this envelope.",
+            "default": "openg2p.auditmanager",
+            "examples": [
+              "openg2p.auditmanager"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "Envelope schema version (not the service version).",
+            "default": "1.0",
+            "examples": [
+              "1.0"
+            ]
+          },
+          "responsetime": {
+            "type": "string",
+            "title": "Responsetime",
+            "description": "RFC3339 timestamp at which this response was produced.",
+            "examples": [
+              "2026-04-23T10:00:00.000Z"
+            ]
+          },
+          "response": {
+            "$ref": "#/components/schemas/ConfigPayload"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            },
+            "type": "array",
+            "title": "Errors",
+            "examples": [
+              []
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "responsetime",
+          "response"
+        ],
+        "title": "ConfigResponse"
+      },
+      "ErrorDetail": {
+        "properties": {
+          "errorCode": {
+            "type": "string",
+            "title": "Errorcode",
+            "description": "OpenG2P-assigned error code. Catalog: `AUD-004` (ingest queue full \u2014 backpressure), `AUD-005` (service not ready \u2014 startup incomplete), `AUD-006` (database health check failed), `AUD-007` (batch payload exceeds configured max size).",
+            "examples": [
+              "AUD-004"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Human-readable message describing the failure.",
+            "examples": [
+              "Audit ingest queue full \u2014 backpressure"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "errorCode",
+          "message"
+        ],
+        "title": "ErrorDetail",
+        "description": "One error entry in the `errors[]` array of the response envelope."
+      },
+      "ErrorResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Constant \u2014 identifies the service that produced this envelope.",
+            "default": "openg2p.auditmanager",
+            "examples": [
+              "openg2p.auditmanager"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "Envelope schema version (not the service version).",
+            "default": "1.0",
+            "examples": [
+              "1.0"
+            ]
+          },
+          "responsetime": {
+            "type": "string",
+            "title": "Responsetime",
+            "description": "RFC3339 timestamp at which this response was produced.",
+            "examples": [
+              "2026-04-23T10:00:00.000Z"
+            ]
+          },
+          "response": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response",
+            "description": "Always `null` on an error response.",
+            "examples": [
+              null
+            ]
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            },
+            "type": "array",
+            "title": "Errors",
+            "description": "One entry per failure. Always at least one for a non-2xx response.",
+            "examples": [
+              [
+                {
+                  "errorCode": "AUD-004",
+                  "message": "Audit ingest queue full \u2014 backpressure"
+                }
+              ]
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "responsetime",
+          "errors"
+        ],
+        "title": "ErrorResponse",
+        "description": "Shared shape for every non-2xx response \u2014 `response` is null, `errors` is populated."
+      },
       "EventBatch": {
         "properties": {
           "events": {
@@ -327,18 +742,71 @@
         "title": "EventBatch",
         "description": "Batched ingest payload."
       },
-      "HTTPValidationError": {
+      "HealthPayload": {
         "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "type": "array",
-            "title": "Detail"
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "`UP` when ready to serve traffic; the envelope is 503 otherwise.",
+            "examples": [
+              "UP"
+            ]
           }
         },
         "type": "object",
-        "title": "HTTPValidationError"
+        "required": [
+          "status"
+        ],
+        "title": "HealthPayload"
+      },
+      "HealthResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Constant \u2014 identifies the service that produced this envelope.",
+            "default": "openg2p.auditmanager",
+            "examples": [
+              "openg2p.auditmanager"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "Envelope schema version (not the service version).",
+            "default": "1.0",
+            "examples": [
+              "1.0"
+            ]
+          },
+          "responsetime": {
+            "type": "string",
+            "title": "Responsetime",
+            "description": "RFC3339 timestamp at which this response was produced.",
+            "examples": [
+              "2026-04-23T10:00:00.000Z"
+            ]
+          },
+          "response": {
+            "$ref": "#/components/schemas/HealthPayload"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            },
+            "type": "array",
+            "title": "Errors",
+            "examples": [
+              []
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "responsetime",
+          "response"
+        ],
+        "title": "HealthResponse"
       },
       "Resource": {
         "properties": {
@@ -366,45 +834,88 @@
         "title": "Resource",
         "description": "The primary object acted upon (optional for plain logins)."
       },
-      "ValidationError": {
+      "VersionPayload": {
         "properties": {
-          "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "type": "array",
-            "title": "Location"
-          },
-          "msg": {
+          "service_version": {
             "type": "string",
-            "title": "Message"
+            "title": "Service Version",
+            "examples": [
+              "0.1.0"
+            ]
           },
-          "type": {
+          "build_time": {
             "type": "string",
-            "title": "Error Type"
+            "title": "Build Time",
+            "description": "Image build timestamp baked in at `docker build` time.",
+            "examples": [
+              "2026-04-23T08:30:00.000Z"
+            ]
           },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
+          "git_commit": {
+            "type": "string",
+            "title": "Git Commit",
+            "description": "Short git commit hash baked in at `docker build` time.",
+            "examples": [
+              "a1b2c3d"
+            ]
           }
         },
         "type": "object",
         "required": [
-          "loc",
-          "msg",
-          "type"
+          "service_version",
+          "build_time",
+          "git_commit"
         ],
-        "title": "ValidationError"
+        "title": "VersionPayload"
+      },
+      "VersionResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id",
+            "description": "Constant \u2014 identifies the service that produced this envelope.",
+            "default": "openg2p.auditmanager",
+            "examples": [
+              "openg2p.auditmanager"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "title": "Version",
+            "description": "Envelope schema version (not the service version).",
+            "default": "1.0",
+            "examples": [
+              "1.0"
+            ]
+          },
+          "responsetime": {
+            "type": "string",
+            "title": "Responsetime",
+            "description": "RFC3339 timestamp at which this response was produced.",
+            "examples": [
+              "2026-04-23T10:00:00.000Z"
+            ]
+          },
+          "response": {
+            "$ref": "#/components/schemas/VersionPayload"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorDetail"
+            },
+            "type": "array",
+            "title": "Errors",
+            "examples": [
+              []
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "responsetime",
+          "response"
+        ],
+        "title": "VersionResponse"
       }
     }
   }
