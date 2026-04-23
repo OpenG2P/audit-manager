@@ -44,7 +44,7 @@ auditManager:
     name: ""
   image:
     repository: openg2p/openg2p-audit-manager
-    tag: "1.0.0"
+    tag: "develop"
     pullPolicy: Always
   podSecurityContext:
     enabled: false
@@ -210,7 +210,8 @@ auditManager:
     # parallelism is bounded by this number — keep HPA maxReplicas ≤ partitions.
     partitions: 12
     # Broker replication factor. Must be ≤ the number of brokers in the cluster.
-    replicationFactor: 3
+    # Override to 3 in multi-broker production clusters for HA.
+    replicationFactor: 1
     # How long Kafka retains messages on the topic. Long enough for the
     # consumer to recover from outages and replay. Default: 7 days.
     retentionMs: "604800000"

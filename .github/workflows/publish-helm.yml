@@ -41,6 +41,14 @@ jobs:
           for changed_file in ${{ steps.files.outputs.all }}; do
             if [[ ${changed_file} =~ ^helm/ ]]; then
               chart_name=$(echo "${changed_file}" | awk -F/ '/^helm\//{print $2}')
+              # Skip top-level files in helm/ (e.g. helm/.gitignore) and any
+              # path that doesn't correspond to an actual chart directory.
+              if [[ -z "${chart_name}" ]] || [[ "${chart_name}" == .* ]]; then
+                continue
+              fi
+              if [[ ! -f "helm/${chart_name}/Chart.yaml" ]]; then
+                continue
+              fi
               echo $chart_name >> charts-list.txt;
               echo "Saved $chart_name chart to charts-list.txt"
             fi
