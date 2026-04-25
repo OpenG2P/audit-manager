@@ -308,12 +308,13 @@
             "title": "Session Id"
           }
         },
+        "additionalProperties": true,
         "type": "object",
         "required": [
           "id"
         ],
         "title": "Actor",
-        "description": "Who (or what system) triggered the event."
+        "description": "Who (or what system) triggered the event.\n\n`extra=\"allow\"` lets emitters carry custom actor attributes (e.g. a\nKeycloak `username` distinct from `name`, an OAuth `session_state`) without\nrequiring a schema change here. Whatever extras are sent land in the\n`details.actor.*` JSONB column alongside the named fields below."
       },
       "AuditData": {
         "properties": {
