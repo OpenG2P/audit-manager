@@ -304,6 +304,25 @@ def test_to_record_actor_extras_preserved_in_details() -> None:
     assert "type" not in details["actor"]
 
 
+def test_actor_extra_attributes_pass_through() -> None:
+    """Actor has extra='allow' — emitters can add arbitrary actor fields
+    (e.g. username, session_state) without an audit-manager schema change."""
+    payload = _base_event()
+    payload["data"]["actor"] = {
+        "type": "user",
+        "id": "u_x",
+        "name": "Display Name",
+        "username": "loginname",       # custom field, not in Actor schema
+        "session_state": "sess_abc",   # another custom field
+    }
+    ev = CloudEvent.model_validate(payload)
+    rec = ev.to_record()
+    details = json.loads(rec["details"])
+    assert details["actor"]["username"] == "loginname"
+    assert details["actor"]["session_state"] == "sess_abc"
+    assert details["actor"]["name"] == "Display Name"
+
+
 def test_to_record_resource_extras_preserved_in_details() -> None:
     """resource.{amount, currency, ...} must land in details.resource.* — only id/type are stripped."""
     payload = _base_event()

@@ -21,7 +21,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 # Standardized sub-fields inside `data`
 # -----------------------------------------------------------------------------
 class Actor(BaseModel):
-    """Who (or what system) triggered the event."""
+    """Who (or what system) triggered the event.
+
+    `extra="allow"` lets emitters carry custom actor attributes (e.g. a
+    Keycloak `username` distinct from `name`, an OAuth `session_state`) without
+    requiring a schema change here. Whatever extras are sent land in the
+    `details.actor.*` JSONB column alongside the named fields below.
+    """
+
+    model_config = ConfigDict(extra="allow")
 
     type: Literal["user", "system", "service", "anonymous"] = "user"
     id: str
