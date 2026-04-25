@@ -211,15 +211,19 @@ def test_to_record_shape_for_beneficiary_updated() -> None:
     assert rec["trace_id"] == "4bf92f3577b34da6a3ce929d0e0e4736"
 
     # details is a JSON string (asyncpg/JSONB contract). Parse and verify:
-    #  - actor/action/outcome/reason are NOT in details (they're flat)
-    #  - resource (with extras if any) IS in details
+    #  - action/outcome/reason are NOT in details (fully promoted to flat columns)
+    #  - actor/resource keep all attrs EXCEPT id/type (those are flat columns)
     #  - changes[] from the CloudEvent `data` IS in details
     details = json.loads(rec["details"])
-    assert "actor" not in details
     assert "action" not in details
     assert "outcome" not in details
-    assert details["resource"]["type"] == "beneficiary"
-    assert details["resource"]["id"] == "b_1029384756"
+    # actor.id and actor.type are flat — but actor.* extras are preserved
+    assert "id" not in details.get("actor", {})
+    assert "type" not in details.get("actor", {})
+    # resource.id and resource.type are flat — but resource.* extras are preserved
+    assert "id" not in details.get("resource", {})
+    assert "type" not in details.get("resource", {})
+    # changes[] passes through unchanged
     assert details["changes"][0]["field"] == "phone"
     assert len(details["changes"]) == 2
 
@@ -232,10 +236,14 @@ def test_to_record_no_resource_for_login() -> None:
     assert rec["resource_type"] is None
     assert rec["resource_id"] is None
     assert rec["action"] == "login"
-    # Login carries `context` in data → details has context but no resource
     details = json.loads(rec["details"])
+    # No resource on a login event
     assert "resource" not in details
+    # Context passes through
     assert details["context"]["mfa"] == "totp"
+    # Actor extras (name, roles, ip, session_id) preserved under details.actor
+    assert details["actor"]["name"] == "fatima.k"
+    assert "program.operator" in details["actor"]["roles"]
 
 
 def test_to_record_system_actor() -> None:
@@ -265,6 +273,59 @@ def test_to_record_reason_promoted_for_failure() -> None:
     # reason should NOT also be in details (it's been promoted)
     details = json.loads(rec["details"])
     assert "reason" not in details
+
+
+def test_to_record_actor_extras_preserved_in_details() -> None:
+    """actor.{name, roles, ip, session_id} must land in details.actor.* — only id/type are stripped."""
+    payload = _base_event()
+    payload["data"]["actor"] = {
+        "type": "user",
+        "id": "u_abc",
+        "name": "Admin User",
+        "roles": ["operator", "approver"],
+        "ip": "10.0.0.1",
+        "session_id": "sess_xyz",
+    }
+    ev = CloudEvent.model_validate(payload)
+    rec = ev.to_record()
+
+    # Flat columns
+    assert rec["actor_id"] == "u_abc"
+    assert rec["actor_type"] == "user"
+
+    # Extras preserved under details.actor
+    details = json.loads(rec["details"])
+    assert details["actor"]["name"] == "Admin User"
+    assert details["actor"]["roles"] == ["operator", "approver"]
+    assert details["actor"]["ip"] == "10.0.0.1"
+    assert details["actor"]["session_id"] == "sess_xyz"
+    # id/type stripped
+    assert "id" not in details["actor"]
+    assert "type" not in details["actor"]
+
+
+def test_to_record_resource_extras_preserved_in_details() -> None:
+    """resource.{amount, currency, ...} must land in details.resource.* — only id/type are stripped."""
+    payload = _base_event()
+    payload["data"]["resource"] = {
+        "type": "payment",
+        "id": "pay_999",
+        "amount": 2500,
+        "currency": "INR",
+        "beneficiary_id": "b_x",
+    }
+    ev = CloudEvent.model_validate(payload)
+    rec = ev.to_record()
+
+    assert rec["resource_id"] == "pay_999"
+    assert rec["resource_type"] == "payment"
+
+    details = json.loads(rec["details"])
+    assert details["resource"]["amount"] == 2500
+    assert details["resource"]["currency"] == "INR"
+    assert details["resource"]["beneficiary_id"] == "b_x"
+    assert "id" not in details["resource"]
+    assert "type" not in details["resource"]
 
 
 def test_to_record_details_is_none_when_no_extras() -> None:

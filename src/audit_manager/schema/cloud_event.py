@@ -124,20 +124,61 @@ def _trace_id_from_parent(traceparent: Optional[str]) -> Optional[str]:
     return None
 
 
-# Sub-fields of `data` that are already promoted to flat columns. Anything
-# else becomes part of `details`.
-_PROMOTED_DATA_FIELDS = {"actor", "action", "outcome", "reason"}
+# `data` sub-fields that are FULLY promoted to flat columns — drop entirely
+# from details (no information left to keep).
+_FULLY_PROMOTED_DATA_FIELDS = {"action", "outcome", "reason"}
+
+# `data` sub-fields where ONLY a couple of attributes are promoted to flat
+# columns. The remaining attributes (e.g. actor.name/roles/ip,
+# resource.amount/currency/program_id) are preserved under `details.<field>`.
+_PARTIALLY_PROMOTED_SUB_ATTRS = {
+    "actor": {"id", "type"},
+    "resource": {"id", "type"},
+}
+
+
+def _is_meaningful(value: Any) -> bool:
+    """True if value carries information beyond emptiness.
+
+    Filters out None and empty collections/strings — `roles: []` after
+    stripping `id`/`type` from actor shouldn't make `details.actor` materialise.
+    """
+    if value is None:
+        return False
+    if isinstance(value, (list, dict, str)) and len(value) == 0:
+        return False
+    return True
 
 
 def _compute_details(d: "AuditData") -> Optional[dict[str, Any]]:
     """Return event-type-specific extras from `data`, or None if there aren't any.
 
-    For `resource`: resource_type and resource_id are flat, but the whole
-    resource object (including extras like amount, currency, program_id) is
-    kept under `details.resource` so those extras remain queryable.
+    For each `data` sub-field:
+      * `action`, `outcome`, `reason`  → fully promoted → dropped
+      * `actor`     → keep all attrs except {id, type} (those are flat columns).
+                      Empty extras like `roles: []` are also dropped so we don't
+                      materialise `details.actor` for events that have no real
+                      actor info beyond id + type.
+      * `resource`  → keep all attrs except {id, type}; same emptiness filter
+      * everything else (`changes`, `context`, custom keys) → pass through
+        (None values already filtered by `exclude_none=True`)
     """
     raw = d.model_dump(mode="json", exclude_none=True)
-    extras = {k: v for k, v in raw.items() if k not in _PROMOTED_DATA_FIELDS}
+    extras: dict[str, Any] = {}
+    for key, value in raw.items():
+        if key in _FULLY_PROMOTED_DATA_FIELDS:
+            continue
+        if key in _PARTIALLY_PROMOTED_SUB_ATTRS:
+            promoted = _PARTIALLY_PROMOTED_SUB_ATTRS[key]
+            if isinstance(value, dict):
+                rest = {
+                    k: v for k, v in value.items()
+                    if k not in promoted and _is_meaningful(v)
+                }
+                if rest:
+                    extras[key] = rest
+            continue
+        extras[key] = value
     return extras if extras else None
 
 
