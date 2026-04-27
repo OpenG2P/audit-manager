@@ -18,7 +18,7 @@ data:
         max_batch_size: {{ .Values.appConfig.ingest.maxBatchSize }}
 
       kafka:
-        bootstrap_servers: {{ .Values.global.kafkaBootstrapServers | quote }}
+        bootstrap_servers: {{ tpl .Values.global.kafkaBootstrapServers $ | quote }}
         topic: {{ .Values.appConfig.kafka.topic | quote }}
         dlq_topic: {{ .Values.appConfig.kafka.dlqTopic | quote }}
         client_id: {{ .Values.appConfig.kafka.clientId | quote }}

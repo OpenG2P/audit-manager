@@ -95,7 +95,7 @@ spec:
               echo "Topic init complete."
           env:
             - name: KAFKA_BOOTSTRAP
-              value: {{ .Values.global.kafkaBootstrapServers | quote }}
+              value: {{ tpl .Values.global.kafkaBootstrapServers $ | quote }}
             - name: TOPIC
               value: {{ .Values.appConfig.kafka.topic | quote }}
             - name: DLQ_TOPIC

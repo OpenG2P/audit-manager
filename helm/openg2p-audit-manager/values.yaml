@@ -15,7 +15,7 @@ global:
 postgres-init:
   enabled: true
   postgresql:
-    host: '{{ .Values.global.postgresqlHost }}'
+    host: '{{ tpl .Values.global.postgresqlHost $ }}'
     port: 5432
     existingSecret: commons-postgresql
     existingSecretPostgresPasswordKey: postgres-password
@@ -127,13 +127,17 @@ auditManager:
   # Environment variables
   # ---------------------------------------------------------------------------
   envVars:
-    # -- Database connection (derived from global values)
-    DB_HOST: '{{ .Values.global.postgresqlHost }}'
+    # -- Database connection (derived from global values).
+    # All string-typed globals are wrapped in `tpl` so a parent chart can
+    # legitimately set them to templated strings like
+    # '{{ .Release.Name }}-postgresql' and have them rendered against the
+    # parent's release context.
+    DB_HOST: '{{ tpl .Values.global.postgresqlHost $ }}'
     DB_PORT: '{{ .Values.global.auditManagerDBPort }}'
     DB_NAME: '{{ tpl .Values.global.auditManagerDB $ }}'
     DB_USER: '{{ tpl .Values.global.auditManagerDBUser $ }}'
     # -- Kafka bootstrap — injected as env so it's easily overridden per-env.
-    AUDIT_MANAGER__KAFKA__BOOTSTRAP_SERVERS: '{{ .Values.global.kafkaBootstrapServers }}'
+    AUDIT_MANAGER__KAFKA__BOOTSTRAP_SERVERS: '{{ tpl .Values.global.kafkaBootstrapServers $ }}'
     # -- Path to YAML config file inside the container (mounted from ConfigMap).
     CONFIG_PATH: /app/config/config.yaml
     # UVICORN_WORKERS: "1"
