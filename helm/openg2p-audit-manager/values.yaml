@@ -43,7 +43,7 @@ auditManager:
     create: false
     name: ""
   image:
-    repository: openg2p/openg2p-audit-manager
+    repository: registry.gitlab.com/openg2p/audit-manager/openg2p-audit-manager
     tag: "develop"
     pullPolicy: Always
   podSecurityContext:
