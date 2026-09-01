@@ -44,7 +44,7 @@ auditManager:
     name: ""
   image:
     repository: openg2p/openg2p-audit-manager
-    tag: "develop"
+    tag: "1.2.0"
     pullPolicy: Always
   podSecurityContext:
     enabled: false
